@@ -1,0 +1,5 @@
+# Fin de línea LF en todas las plataformas: los hashes de datos y reglas del expediente
+# deben ser idénticos en Windows y Linux.
+* text=auto eol=lf
+*.png binary
+*.duckdb binary

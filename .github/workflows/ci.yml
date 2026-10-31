@@ -21,7 +21,14 @@ jobs:
           cache: pip
       - run: python -m pip install -r requirements.txt
       - name: Pruebas (incluye criterios de aceptación T-I19-01 … 05)
-        run: python run.py test
+        shell: bash
+        run: |
+          set -o pipefail
+          python run.py test 2>&1 | tee pytest.log
+      - name: Publicar pruebas fallidas
+        if: failure()
+        shell: bash
+        run: grep -E "^(FAILED|ERROR) " pytest.log | head -20 | sed 's/^/::error title=pytest::/' || true
       - name: Demo de punta a punta
         run: python run.py demo
       - name: Indicadores de validación
