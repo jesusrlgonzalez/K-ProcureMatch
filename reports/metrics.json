@@ -1,0 +1,106 @@
+{
+  "run_id": "6524ad28bbf21070",
+  "rules_version": "R1.0.0",
+  "as_of": "2026-03-31",
+  "datos": "sintéticos (fixture etiquetado)",
+  "motor_actual": {
+    "lineas": 749,
+    "exactitud": 1.0,
+    "falsas_coincidencias": 0,
+    "tasa_falsa_coincidencia": 0.0,
+    "coincidencias_no_detectadas": 0,
+    "por_estado": {
+      "MATCH": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "support": 660
+      },
+      "EXCEPTION": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "support": 36
+      },
+      "REVIEW": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "support": 16
+      },
+      "UNMATCHED": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "support": 8
+      },
+      "BLOCKED": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "support": 29
+      }
+    },
+    "confusion": {
+      "BLOCKED": {
+        "BLOCKED": 29,
+        "EXCEPTION": 0,
+        "MATCH": 0,
+        "REVIEW": 0,
+        "UNMATCHED": 0
+      },
+      "EXCEPTION": {
+        "BLOCKED": 0,
+        "EXCEPTION": 36,
+        "MATCH": 0,
+        "REVIEW": 0,
+        "UNMATCHED": 0
+      },
+      "MATCH": {
+        "BLOCKED": 0,
+        "EXCEPTION": 0,
+        "MATCH": 660,
+        "REVIEW": 0,
+        "UNMATCHED": 0
+      },
+      "REVIEW": {
+        "BLOCKED": 0,
+        "EXCEPTION": 0,
+        "MATCH": 0,
+        "REVIEW": 16,
+        "UNMATCHED": 0
+      },
+      "UNMATCHED": {
+        "BLOCKED": 0,
+        "EXCEPTION": 0,
+        "MATCH": 0,
+        "REVIEW": 0,
+        "UNMATCHED": 8
+      }
+    },
+    "diferencia_monetaria_por_moneda": [
+      {
+        "moneda": "MXN",
+        "casos": 17,
+        "inyectada_minor": 11022994,
+        "detectada_minor": 11022994,
+        "casos_detectados_exactos": 17
+      },
+      {
+        "moneda": "USD",
+        "casos": 7,
+        "inyectada_minor": 3935780,
+        "detectada_minor": 3935780,
+        "casos_detectados_exactos": 7
+      }
+    ],
+    "esfuerzo_revision": 0.1188
+  },
+  "motor_v0": {
+    "falsas_coincidencias": 4,
+    "coincidencias_no_detectadas": 132,
+    "exactitud_binaria_match": 0.8184,
+    "esfuerzo_revision": 0.2897,
+    "limitaciones": "solo MXN, IVA fijo 16 %, sin tolerancias, sin devoluciones ni facturación parcial"
+  },
+  "revision_manual_total": {
+    "esfuerzo_revision": 1.0,
+    "supuesto": "proceso base: un analista coteja cada línea a mano"
+  },
+  "decision_ml": "No se incorpora ML: las reglas deterministas ya alcanzan 0 falsas coincidencias en este fixture; un modelo solo se evaluará con datos reales y si reduce el esfuerzo sin aumentar falsas coincidencias."
+}
