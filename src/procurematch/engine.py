@@ -68,6 +68,23 @@ REASON_TEXT = {
     "PARTIAL_BILLING": "La orden se factura en varias facturas",
 }
 
+VALIDATION_TEXT = {
+    "MISSING_KEY": "falta la clave", "INVALID_ID_FORMAT": "identificador con formato inválido",
+    "INVALID_NUMBER": "número inválido", "NEGATIVE_NOT_ALLOWED": "valor negativo no permitido",
+    "INVALID_DATE": "fecha inválida", "INVALID_CURRENCY": "moneda con formato inválido",
+    "INVALID_DOCUMENT_TYPE": "tipo de documento inválido", "INVALID_MOVEMENT": "movimiento inválido",
+    "INVALID_VALUE": "valor inválido",
+}
+
+
+def describe_reason(code: str) -> str:
+    """Texto legible de un motivo; los de validación tienen la forma `campo:CÓDIGO`."""
+    if ":" in code:
+        field, err = code.split(":", 1)
+        return f"Validación: {VALIDATION_TEXT.get(err, err)} en «{field}»"
+    return REASON_TEXT.get(code, code)
+
+
 CASE_COLUMNS = [
     "case_id", "invoice_ref", "row_no", "invoice_id", "invoice_line", "supplier_id", "po_id", "po_line", "sku",
     "invoice_date", "currency", "document_type", "qty_billed", "unit_price_minor", "tax_minor", "total_minor",

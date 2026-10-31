@@ -1,31 +1,13 @@
-"""Filtros e indicadores compartidos por el dashboard y la API: una sola lógica, mismos totales."""
+"""Filtros e indicadores con pandas: una sola lógica para la API y, a través de ella, para el dashboard."""
 from __future__ import annotations
-
-from dataclasses import dataclass, field
-from datetime import date
 
 import pandas as pd
 
-from .engine import summarize
+from .engine import describe_reason, summarize
+from .filters import Filters
+from .schemas import STATUS_LABEL
 
-
-@dataclass
-class Filters:
-    suppliers: list[str] = field(default_factory=list)
-    currencies: list[str] = field(default_factory=list)
-    statuses: list[str] = field(default_factory=list)
-    reasons: list[str] = field(default_factory=list)          # al menos uno de los motivos
-    review_states: list[str] = field(default_factory=list)    # PENDIENTE / RESUELTO
-    date_from: date | None = None
-    date_to: date | None = None
-    include_undated: bool = True   # facturas con fecha inválida no desaparecen al filtrar por periodo
-
-    def as_dict(self) -> dict:
-        d = {k: (v.isoformat() if isinstance(v, date) else v) for k, v in self.__dict__.items()
-             if v and k != "include_undated"}
-        if (self.date_from or self.date_to) and not self.include_undated:
-            d["include_undated"] = False
-        return d
+__all__ = ["Filters", "apply", "kpis", "reason_catalog", "reason_counts", "facets"]
 
 
 def apply(cases: pd.DataFrame, f: Filters) -> pd.DataFrame:
@@ -52,6 +34,14 @@ def apply(cases: pd.DataFrame, f: Filters) -> pd.DataFrame:
     return cases[m]
 
 
+def reason_counts(cases: pd.DataFrame) -> list[dict]:
+    """Líneas por motivo (una línea puede tener varios motivos: no es una partición)."""
+    codes = cases["reasons"].fillna("").str.split(";").explode()
+    counts = codes[codes != ""].value_counts()
+    rows = [{"codigo": c, "descripcion": describe_reason(c), "lineas": int(n)} for c, n in counts.items()]
+    return sorted(rows, key=lambda r: (-r["lineas"], r["codigo"]))
+
+
 def kpis(cases: pd.DataFrame) -> dict:
     s = summarize(cases)
     total = s["lineas"]
@@ -62,9 +52,28 @@ def kpis(cases: pd.DataFrame) -> dict:
         requieren_analista=need_human,
         esfuerzo_revision=round(need_human / total, 4) if total else 0.0,
         pendientes_de_decision=pending,
+        motivos=reason_counts(cases),
     )
     return s
 
 
 def reason_catalog(cases: pd.DataFrame) -> list[str]:
     return sorted({x for r in cases["reasons"].fillna("") for x in r.split(";") if x})
+
+
+def facets(cases: pd.DataFrame) -> dict:
+    """Valores disponibles para cada filtro de la corrida."""
+    def distinct(col: str) -> list[str]:
+        return sorted({str(v) for v in cases[col].dropna() if str(v)})
+
+    dates = pd.to_datetime(cases["invoice_date"], errors="coerce", format="%Y-%m-%d").dropna()
+    return {
+        "proveedores": distinct("supplier_id"),
+        "monedas": distinct("currency"),
+        "estados": [{"codigo": s.value, "etiqueta": lbl} for s, lbl in STATUS_LABEL.items()],
+        "motivos": [{"codigo": c, "descripcion": describe_reason(c)} for c in reason_catalog(cases)],
+        "revision": ["PENDIENTE", "RESUELTO"],
+        "fecha_min": dates.min().date().isoformat() if len(dates) else None,
+        "fecha_max": dates.max().date().isoformat() if len(dates) else None,
+        "facturas_sin_fecha_valida": int(len(cases) - len(dates)),
+    }

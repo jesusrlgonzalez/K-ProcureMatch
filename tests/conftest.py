@@ -65,3 +65,40 @@ def invoice(**kw):
     base = {**INV, "tax_minor": str(tax), "total_minor": str(sub + tax)}
     base.update({k: str(v) for k, v in kw.items()})
     return base
+
+
+@pytest.fixture(scope="session")
+def api_server(sample_dir, tmp_path_factory):
+    """API real (uvicorn) en un puerto libre: el dashboard se prueba como cliente HTTP, no en proceso."""
+    import socket
+    import threading
+    import time
+
+    import uvicorn
+
+    from procurematch.api import create_app
+    from procurematch.service import Service
+
+    svc = Service(sample_dir, ":memory:", upload_dir=tmp_path_factory.mktemp("uploads"))
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    server = uvicorn.Server(uvicorn.Config(create_app(svc), host="127.0.0.1", port=port, log_level="warning",
+                                           access_log=False))
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    for _ in range(200):
+        if server.started:
+            break
+        time.sleep(0.05)
+    assert server.started, "la API de pruebas no arrancó"
+    yield f"http://127.0.0.1:{port}"
+    server.should_exit = True
+    thread.join(timeout=10)
+
+
+@pytest.fixture
+def dashboard(api_server, monkeypatch):
+    from streamlit.testing.v1 import AppTest
+    monkeypatch.setenv("KPM_API_URL", api_server)
+    return AppTest.from_file(str(ROOT / "dashboard" / "app.py"), default_timeout=120)

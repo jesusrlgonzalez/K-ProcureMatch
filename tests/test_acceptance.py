@@ -179,18 +179,20 @@ def test_T_I19_05_ui_filters_reproduce_engine_counts_in_sql(sample_run):
     assert parts + int(cases["currency"].isna().sum()) == len(cases)
 
 
-def test_T_I19_05_dashboard_metrics_equal_engine(monkeypatch, sample_run):
-    monkeypatch.setenv("KPM_DB", ":memory:")
-    from streamlit.testing.v1 import AppTest
-    at = AppTest.from_file(str(__import__("conftest").ROOT / "dashboard" / "app.py"), default_timeout=120).run()
-    assert not at.exception
+def test_T_I19_05_dashboard_metrics_equal_engine(dashboard, sample_run):
+    """El dashboard (cliente HTTP de la API real) muestra los mismos totales que el motor."""
+    at = dashboard.run()
+    assert not at.exception and not at.error
     metric = {m.label: m.value for m in at.metric}
     st = sample_run.summary["por_estado"]
     assert int(metric["Líneas"]) == len(sample_run.cases)
     assert int(metric["Conciliadas"]) == st["MATCH"] and int(metric["Discrepantes"]) == st["EXCEPTION"]
+    assert any(c.value.startswith("✅ Control de totales") for c in at.caption)
     at.multiselect(key="f_currency").set_value(["USD"]).run()
     usd = sample_run.cases[sample_run.cases["currency"] == "USD"]
-    assert int({m.label: m.value for m in at.metric}["Líneas"]) == len(usd)
+    metric = {m.label: m.value for m in at.metric}
+    assert int(metric["Líneas"]) == len(usd)
+    assert int(metric["Conciliadas"]) == int((usd["status"] == "MATCH").sum())
 
 
 def test_T_I19_05_export_carries_decision_reasons_version_and_refs(sample_dir, sample_run):

@@ -47,9 +47,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Construir imagen
         run: docker build -t k-procurematch:ci .
-      - name: Arranque de la API y consumo real de sus endpoints
+      - name: API en contenedor y consumo real de sus endpoints
         run: |
-          docker run -d --name kpm -p 8000:8000 k-procurematch:ci
+          docker network create kpm
+          docker run -d --name kpm-api --network kpm -p 8000:8000 k-procurematch:ci
           for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8000/health && break; sleep 2; done
           RID=$(curl -fsS -X POST http://127.0.0.1:8000/runs -H 'content-type: application/json' \
                 -d '{"as_of":"2026-03-31"}' | python3 -c "import json,sys;print(json.load(sys.stdin)['run_id'])")
@@ -57,10 +58,21 @@ jobs:
             "import json,sys;d=json.load(sys.stdin);assert sum(d['por_estado'].values())==d['lineas']==749,d;print(d['por_estado'])"
           curl -fsS -o expediente.zip "http://127.0.0.1:8000/runs/$RID/export"
           python3 -c "import zipfile;n=zipfile.ZipFile('expediente.zip').namelist();assert any(x.endswith('manifest.json') for x in n);print(n)"
-      - name: Arranque del dashboard
+          curl -fsS -X POST http://127.0.0.1:8000/datasets \
+            -F purchase_orders=@data/sample/purchase_orders.csv -F goods_receipts=@data/sample/goods_receipts.csv \
+            -F invoice_lines=@data/sample/invoice_lines.csv | python3 -c "import json,sys;print(json.load(sys.stdin)['dataset_id'])"
+      - name: Dashboard en contenedor consumiendo la API en contenedor
         run: |
-          docker run -d --name dash -p 8501:8501 k-procurematch:ci \
-            streamlit run dashboard/app.py --server.address=0.0.0.0 --server.headless=true
-          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8501/_stcore/health && exit 0; sleep 2; done; exit 1
+          docker run -d --name kpm-dash --network kpm -e KPM_API_URL=http://kpm-api:8000 -p 8501:8501 \
+            k-procurematch:ci streamlit run dashboard/app.py --server.address=0.0.0.0 --server.headless=true
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8501/_stcore/health && break; sleep 2; done
+          docker run --rm -i --network kpm -e KPM_API_URL=http://kpm-api:8000 k-procurematch:ci python - <<'PY'
+          from streamlit.testing.v1 import AppTest
+          at = AppTest.from_file("dashboard/app.py", default_timeout=120).run()
+          assert not at.exception and not at.error, [e.value for e in at.exception] + [e.value for e in at.error]
+          m = {x.label: x.value for x in at.metric}
+          assert m["Líneas"] == "749" and m["Conciliadas"] == "660", m
+          print("El dashboard en contenedor muestra", m["Líneas"], "líneas obtenidas de la API en contenedor")
+          PY
       - if: failure()
-        run: docker logs kpm; docker logs dash || true
+        run: docker logs kpm-api; docker logs kpm-dash || true

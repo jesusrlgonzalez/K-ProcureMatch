@@ -39,13 +39,13 @@ El motor v0 aprobaba facturas con fecha futura o ligadas a órdenes inválidas, 
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-python run.py dashboard            # interfaz del analista → http://localhost:8501
+python run.py dashboard            # API + interfaz del analista → http://localhost:8501
+python run.py api                  # solo la API REST → http://127.0.0.1:8000/docs
 python run.py demo                 # conciliación sin interfaz → demo_output/ (expediente completo)
-python run.py api                  # API REST → http://127.0.0.1:8000/docs
 python run.py test                 # pruebas automatizadas
 python run.py evaluate             # indicadores → reports/metrics.json
 ```
-Con Docker: `docker compose up` levanta la API (puerto 8000) y el dashboard (puerto 8501).
+Con Docker: `docker compose up` levanta la API (puerto 8000) y el dashboard (puerto 8501), que se conecta a ella.
 
 ## Criterios de aceptación y su prueba
 | Criterio | Qué garantiza | Pruebas |
@@ -53,10 +53,10 @@ Con Docker: `docker compose up` levanta la API (puerto 8000) y el dashboard (pue
 | AC-I19-01 | Una entrada sin clave esencial, con moneda incompatible o con formato inválido se identifica por archivo y fila, y no genera una conciliación falsa | `T_I19_04_*` |
 | AC-I19-02 | Un caso exacto se clasifica `MATCH`; una diferencia fuera de tolerancia, `EXCEPTION`, con importes y regla auditables | `T_I19_01_*`, `T_I19_02_*` |
 | AC-I19-03 | Candidatos ambiguos y facturas duplicadas no se vinculan automáticamente: van a revisión | `T_I19_03_*` |
-| AC-I19-04 | Los filtros y conteos de la interfaz reproducen los del motor, sin diferencias de totales (verificado contra SQL independiente y contra el dashboard renderizado) | `T_I19_05_funnel…`, `T_I19_05_ui_filters…`, `T_I19_05_dashboard…` |
+| AC-I19-04 | Los filtros y conteos de la interfaz reproducen los del motor, sin diferencias de totales (verificado contra SQL independiente y contra el dashboard renderizado, conectado a una API HTTP real) | `T_I19_05_funnel…`, `T_I19_05_ui_filters…`, `T_I19_05_dashboard…` |
 | AC-I19-05 | La exportación incluye decisión humana, motivos, versión de reglas, referencias y hashes; no contiene operaciones de pago ni de ERP | `T_I19_05_export…`, `test_api_rejects…` |
 
-Las pruebas están en `tests/test_acceptance.py` y corren en Linux y Windows en cada cambio.
+Las pruebas están en `tests/test_acceptance.py` y `tests/test_dashboard_api.py`, y corren en Linux y Windows en cada cambio.
 
 ## Cómo funciona
 | Capa | Tecnología | Por qué |
@@ -64,10 +64,29 @@ Las pruebas están en `tests/test_acceptance.py` y corren en Linux y Windows en 
 | Contratos de datos | Pydantic | Valida cada fila y produce errores con código, campo y fila |
 | Ingesta y persistencia | DuckDB (SQL) | Lee los CSV como texto sin perder filas, calcula cobertura y periodos, guarda corridas y decisiones |
 | Motor | **SQL (DuckDB) + pandas** | Las reglas viven en [`reconcile.sql`](src/procurematch/sql/reconcile.sql): cada regla es una consulta, el vínculo 3-way son joins, la facturación acumulada usa funciones de ventana y el estado sale de una tabla de precedencia. Importes en enteros (centavos), sin flotantes |
-| Indicadores y filtros | pandas | Embudo, importes por moneda y filtros compartidos por dashboard y API |
-| Interfaz | Streamlit + Plotly | Filtros por proveedor, periodo, moneda, discrepancia y estado de revisión; embudo; comparador de documentos |
-| API | FastAPI | Consumo programático; CI la arranca en un contenedor y consume sus endpoints |
-| Entrega | Docker, GitHub Actions | Pruebas en Ubuntu y Windows; build de la imagen y arranque real de la API y del dashboard |
+| Indicadores y filtros | pandas | Embudo, importes por moneda, conteo de motivos y filtros |
+| API | FastAPI | **Única puerta de entrada al sistema**: corridas, subida de archivos, filtros, casos, decisiones y expedientes |
+| Interfaz | Streamlit + Plotly | Cliente HTTP de la API (no accede al motor ni a la base de datos): filtros por proveedor, periodo, moneda, discrepancia y revisión; embudo; comparador de documentos |
+| Entrega | Docker, GitHub Actions | Pruebas en Ubuntu y Windows; en contenedores, el dashboard consulta a la API por red y se verifica que muestre los mismos totales |
+
+```text
+Analista ──▶ Dashboard (Streamlit + Plotly) ──HTTP──▶ API (FastAPI) ──▶ Motor SQL (DuckDB) + pandas ──▶ DuckDB
+                                                         │                                   (corridas y decisiones)
+                                         Scripts / ERP / BI (mismo cliente: procurematch.client)
+```
+
+### Endpoints
+| Método | Ruta | Uso |
+|---|---|---|
+| `POST` | `/datasets` | Subir las tres fuentes (y el maestro de proveedores opcional); valida el esquema |
+| `POST` | `/runs` | Ejecutar una conciliación sobre la demostración o un juego subido, con fecha de corte |
+| `GET` | `/runs/{id}/summary` | Embudo, estados, importes por moneda y motivos de la vista filtrada |
+| `GET` | `/runs/{id}/cases` · `/cases/{caso}` | Casos filtrados (paginados) y detalle con los tres documentos y el comparador |
+| `POST` | `/runs/{id}/cases/{caso}/resolution` | Registrar la decisión del analista |
+| `GET` | `/runs/{id}/export` | Expediente de la vista filtrada (ZIP: CSV, JSON, HTML) |
+| `GET` | `/runs/{id}/facets` · `/data-quality` · `/manifest`, `/rules` | Opciones de filtro, cobertura e incidencias, trazabilidad y reglas vigentes |
+
+Los filtros (`supplier`, `currency`, `status`, `reason`, `review_state`, `date_from`, `date_to`) son los mismos en todas las consultas. Documentación interactiva en `/docs`.
 
 - Reglas y tolerancias: [`rules/rules_v1.yaml`](rules/rules_v1.yaml) · catálogo de motivos: [`docs/reglas.md`](docs/reglas.md)
 - Formato de entrada: [`docs/contrato_datos.md`](docs/contrato_datos.md)

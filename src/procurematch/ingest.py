@@ -55,12 +55,14 @@ class Ingested:
         return {t.file: {"sha256": t.sha256, "rows": len(t.raw)} for t in self.tables.values()}
 
 
-def _read(path: Path) -> pd.DataFrame:
+def _read(path: Path, fname: str) -> pd.DataFrame:
     con = duckdb.connect()
     try:
         df = con.execute(
             "SELECT * FROM read_csv(?, header=true, all_varchar=true, auto_detect=true, "
             "null_padding=true, quote='\"')", [str(path)]).df()
+    except duckdb.Error as e:  # archivo vacío, binario o con codificación no UTF-8
+        raise SchemaError(f"{fname}: no se pudo leer como CSV UTF-8 ({type(e).__name__})") from None
     finally:
         con.close()
     df = df.fillna("").map(lambda v: v if isinstance(v, str) else str(v))
@@ -88,7 +90,7 @@ def load(source_dir: str | Path, files: dict[str, Path] | None = None) -> Ingest
             if name in REQUIRED:
                 raise SchemaError(f"Falta la fuente obligatoria {fname}")
             continue
-        raw = _read(path)
+        raw = _read(path, fname)
         missing = [c for c in required if c not in raw.columns]
         if missing:
             raise SchemaError(f"{fname}: faltan columnas {missing}")

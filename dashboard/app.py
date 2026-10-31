@@ -1,12 +1,15 @@
 """Dashboard de conciliación 3-way para el analista de cuentas por pagar.
 
-Ejecutar:  streamlit run dashboard/app.py
+Es un cliente de la API: todos los datos (corridas, cobertura, filtros, casos, decisiones y expedientes)
+llegan por HTTP. No importa el motor ni la base de datos.
+
+Ejecutar:  python run.py dashboard      (levanta la API y el dashboard)
+           KPM_API_URL=http://host:8000 streamlit run dashboard/app.py   (API ya en marcha)
 """
 from __future__ import annotations
 
 import os
 import sys
-import tempfile
 from datetime import date
 from pathlib import Path
 
@@ -17,16 +20,14 @@ import streamlit as st
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from procurematch.engine import REASON_TEXT  # noqa: E402
-from procurematch.ingest import TABLES, SchemaError  # noqa: E402
-from procurematch.rules import load_rules  # noqa: E402
-from procurematch.schemas import STATUS_LABEL, Decision, Resolution, Status  # noqa: E402
-from procurematch.service import Service  # noqa: E402
-from procurematch.views import Filters, apply, kpis, reason_catalog  # noqa: E402
+from procurematch.client import REQUIRED_SOURCES, SOURCE_FILES, ApiClient, ApiError  # noqa: E402
+from procurematch.filters import Filters  # noqa: E402
+from procurematch.schemas import STATUS_LABEL, Decision, Status  # noqa: E402
 
-SAMPLE = ROOT / "data" / "sample"
-DB = os.environ.get("KPM_DB", str(ROOT / "data" / "kpm_dashboard.duckdb"))
+API_URL = os.environ.get("KPM_API_URL", "http://127.0.0.1:8000")
+DEMO_AS_OF = date(2026, 3, 31)
 COLORS = {"MATCH": "#2e7d32", "EXCEPTION": "#ef6c00", "REVIEW": "#3949ab", "UNMATCHED": "#757575", "BLOCKED": "#c62828"}
+MONEY_FIELDS = {"Precio unitario", "Impuesto", "Total"}
 
 st.set_page_config(page_title="K-ProcureMatch", page_icon="🧾", layout="wide")
 
@@ -35,9 +36,6 @@ def money(minor, cur: str = "") -> str:
     if minor is None or pd.isna(minor):
         return "—"
     return f"{int(minor) / 100:,.2f} {cur}".strip()
-
-
-MONEY_FIELDS = {"Precio unitario", "Impuesto", "Total"}
 
 
 def cell(v, campo: str, cur: str) -> str:
@@ -49,74 +47,99 @@ def cell(v, campo: str, cur: str) -> str:
 
 
 @st.cache_resource
-def demo_service() -> Service:
-    return Service(SAMPLE, DB)
+def api(url: str) -> ApiClient:
+    return ApiClient(url)
 
+
+@st.cache_data(show_spinner=False)
+def facets(url: str, run_id: str) -> dict:          # inmutable por corrida
+    return api(url).facets(run_id)
+
+
+@st.cache_data(show_spinner=False)
+def data_quality(url: str, run_id: str):            # inmutable por corrida
+    return api(url).data_quality(run_id)
+
+
+def fail(e: ApiError) -> None:
+    if e.status == 0:
+        st.error(f"No hay conexión con la API en `{API_URL}`. Inicie el sistema con `python run.py dashboard` "
+                 "o defina `KPM_API_URL`.")
+    else:
+        st.error(f"La API respondió {e.status}: {e.detail}")
+    st.stop()
+
+
+client = api(API_URL)
+try:
+    rules = client.rules()
+except ApiError as e:
+    fail(e)
 
 # ---------------------------------------------------------------- fuente y corrida
 st.sidebar.title("K-ProcureMatch")
-rules = load_rules()
-st.sidebar.caption(f"Reglas **{rules.version}** · aprobación: `{rules.approval_status}`  \n"
-                   f"Tolerancia precio: {rules.unit_price_bp / 100:.2f} % o {rules.unit_price_abs_minor / 100:.2f}")
+tol = rules["tolerancias"]
+st.sidebar.caption(f"Reglas **{rules['version']}** · aprobación: `{rules['aprobacion']['estado']}`  \n"
+                   f"Tolerancia precio: {tol['precio_bp'] / 100:.2f} % o {tol['precio_abs_minor'] / 100:.2f}  \n"
+                   f"API: `{API_URL}`")
 mode = st.sidebar.radio("Fuente de datos", ["Datos de demostración", "Subir mis archivos"], key="mode")
 
-svc: Service | None = None
+dataset_id: str | None = None
 if mode == "Datos de demostración":
-    svc = demo_service()
-    default_as_of = date(2026, 3, 31)
+    dataset_id, default_as_of = "demo", DEMO_AS_OF
 else:
     default_as_of = date.today()
     st.sidebar.caption("Órdenes, recepciones y facturas son obligatorias; el maestro de proveedores es opcional.")
-    ups = {name: st.sidebar.file_uploader(fname, type="csv", key=f"up_{name}") for name, (fname, _, _) in TABLES.items()}
-    if all(ups[n] for n in ("purchase_orders", "goods_receipts", "invoice_lines")):
+    ups = {name: st.sidebar.file_uploader(fname, type="csv", key=f"up_{name}") for name, fname in SOURCE_FILES.items()}
+    if all(ups[n] for n in REQUIRED_SOURCES):
         key = tuple((n, u.file_id) for n, u in ups.items() if u)
         if st.session_state.get("upload_key") != key:
-            tmp = Path(tempfile.mkdtemp(prefix="kpm_"))
-            for n, u in ups.items():
-                if u:
-                    (tmp / TABLES[n][0]).write_bytes(u.getvalue())
-            st.session_state.update(upload_key=key, upload_svc=Service(tmp, DB), run_id=None)
-        svc = st.session_state["upload_svc"]
+            try:
+                up = client.upload({n: u.getvalue() for n, u in ups.items() if u})
+            except ApiError as e:
+                fail(e)
+            st.session_state.update(upload_key=key, upload_dataset=up["dataset_id"])
+        dataset_id = st.session_state["upload_dataset"]
 
 as_of = st.sidebar.date_input("Fecha de corte", default_as_of, key="as_of")
-if svc is None:
+if dataset_id is None:
     st.info("Suba las tres tablas para comenzar.")
     st.stop()
 
 try:
-    if st.sidebar.button("Ejecutar conciliación", type="primary") or st.session_state.get("run_svc") is not svc \
-            or st.session_state.get("run_as_of") != as_of:
-        res = svc.new_run(as_of)
-        st.session_state.update(run_id=res.run_id, run_svc=svc, run_as_of=as_of)
-except SchemaError as e:
-    st.error(f"Esquema inválido: {e}")
-    st.stop()
+    if st.sidebar.button("Ejecutar conciliación", type="primary") \
+            or st.session_state.get("run_key") != (dataset_id, as_of):
+        r = client.new_run(as_of, dataset_id)
+        st.session_state.update(run_id=r["run_id"], run_key=(dataset_id, as_of), manifest=r["manifest"])
+    run_id, manifest = st.session_state["run_id"], st.session_state["manifest"]
+    fac = facets(API_URL, run_id)
+except ApiError as e:
+    fail(e)
+st.sidebar.caption(f"Corrida `{run_id}` · corte {manifest['as_of']} · reglas {manifest['rules']['version']}")
 
-run_id = st.session_state["run_id"]
-res = svc.result(run_id)
-all_cases = svc.cases(run_id)
-st.sidebar.caption(f"Corrida `{run_id}` · corte {res.as_of.isoformat()}")
-
-# ---------------------------------------------------------------- filtros
+# ---------------------------------------------------------------- filtros (valores ofrecidos por la API)
 st.sidebar.header("Filtros")
-dates = pd.to_datetime(all_cases["invoice_date"], errors="coerce", format="%Y-%m-%d").dropna()
 f = Filters(
-    suppliers=st.sidebar.multiselect("Proveedor", sorted(all_cases["supplier_id"].dropna().unique()), key="f_supplier", placeholder="Todos"),
-    currencies=st.sidebar.multiselect("Moneda", sorted(all_cases["currency"].dropna().unique()), key="f_currency", placeholder="Todas"),
+    suppliers=st.sidebar.multiselect("Proveedor", fac["proveedores"], key="f_supplier", placeholder="Todos"),
+    currencies=st.sidebar.multiselect("Moneda", fac["monedas"], key="f_currency", placeholder="Todas"),
     statuses=st.sidebar.multiselect("Estado", [s.value for s in Status], format_func=lambda s: STATUS_LABEL[Status(s)],
                                     key="f_status", placeholder="Todos"),
-    reasons=st.sidebar.multiselect("Discrepancia / motivo", reason_catalog(all_cases), key="f_reason",
-                             placeholder="Todos"),
-    review_states=st.sidebar.multiselect("Revisión", ["PENDIENTE", "RESUELTO"], key="f_review", placeholder="Todos"),
+    reasons=st.sidebar.multiselect("Discrepancia / motivo", [m["codigo"] for m in fac["motivos"]], key="f_reason",
+                                   placeholder="Todos"),
+    review_states=st.sidebar.multiselect("Revisión", fac["revision"], key="f_review", placeholder="Todos"),
 )
-if not dates.empty:
-    full = (dates.min().date(), dates.max().date())
+if fac["fecha_min"]:
+    full = (date.fromisoformat(fac["fecha_min"]), date.fromisoformat(fac["fecha_max"]))
     period = st.sidebar.date_input("Periodo de factura", full, key="f_period")
     if isinstance(period, tuple) and len(period) == 2 and tuple(period) != full:
         f.date_from, f.date_to = period
         f.include_undated = st.sidebar.checkbox("Incluir facturas sin fecha válida", True, key="f_undated")
-cases = apply(all_cases, f)
-k = kpis(cases)
+
+try:
+    k = client.summary(run_id, f)
+    cases = client.cases(run_id, f)
+except ApiError as e:
+    fail(e)
 
 # ---------------------------------------------------------------- vista
 st.title("Conciliación 3-way · órdenes, recepciones y facturas")
@@ -156,39 +179,48 @@ with tab_res:
     fig2.update_layout(title="Líneas por estado (categorías disjuntas)", margin=dict(l=10, r=10, t=40, b=10), height=330)
     right.plotly_chart(fig2, width="stretch")
 
-    codes = cases["reasons"].fillna("").str.split(";").explode()
-    codes = codes[codes != ""].value_counts()
-    if not codes.empty:
-        fig3 = go.Figure(go.Bar(y=[REASON_TEXT.get(x.split(":")[-1], x) for x in codes.index], x=codes.values,
-                                orientation="h", marker_color="#546e7a"))
-        fig3.update_layout(title="Motivos de discrepancia", height=max(260, 26 * len(codes)),
+    if k["motivos"]:
+        mot = k["motivos"]
+        fig3 = go.Figure(go.Bar(y=[m["descripcion"] for m in mot], x=[m["lineas"] for m in mot], orientation="h",
+                                marker_color="#546e7a"))
+        fig3.update_layout(title="Motivos de discrepancia", height=max(260, 26 * len(mot)),
                            margin=dict(l=10, r=10, t=40, b=10), yaxis={"autorange": "reversed"})
         st.plotly_chart(fig3, width="stretch")
-    ok = sum(k["por_estado"].values()) == len(cases)
-    st.caption(("✅" if ok else "❌") + f" Control de totales: {sum(k['por_estado'].values())} líneas clasificadas = "
-               f"{len(cases)} líneas filtradas.")
+    classified = sum(k["por_estado"].values())
+    ok = classified == k["lineas"] == len(cases)
+    st.caption(("✅" if ok else "❌") + f" Control de totales: {classified} líneas clasificadas (resumen) = "
+               f"{len(cases)} casos recibidos (detalle).")
 
 with tab_cov:
+    try:
+        coverage, issues = data_quality(API_URL, run_id)
+    except ApiError as e:
+        fail(e)
     st.subheader("Cobertura, periodos y registros inválidos")
-    st.dataframe(res.ingested.coverage, hide_index=True, width="stretch")
-    st.subheader(f"Incidencias de validación ({len(res.ingested.issues)})")
+    st.dataframe(coverage, hide_index=True, width="stretch")
+    st.subheader(f"Incidencias de validación ({len(issues)})")
     st.caption("Ninguna fila se elimina: cada incidencia se identifica por archivo y fila.")
-    st.dataframe(res.ingested.issues, hide_index=True, width="stretch")
+    st.dataframe(issues, hide_index=True, width="stretch")
 
 with tab_cases:
     st.subheader(f"Casos ({len(cases)})")
-    view = cases[["case_id", "status_label", "supplier_id", "invoice_id", "po_id", "invoice_date", "currency",
-                  "total_minor", "amount_diff_minor", "reasons", "review_state", "decision"]].copy()
-    view["total_minor"] = view["total_minor"].map(money)
-    view["amount_diff_minor"] = view["amount_diff_minor"].map(money)
-    view["decision"] = view["decision"].fillna("")
-    view.columns = ["Caso", "Estado", "Proveedor", "Factura", "Orden", "Fecha", "Moneda", "Total", "Diferencia",
-                    "Motivos", "Revisión", "Decisión"]
-    st.dataframe(view, hide_index=True, width="stretch", height=280)
-    if not cases.empty:
-        cid = st.selectbox("Abrir caso", cases["case_id"], key="case_pick",
-                           format_func=lambda x: f"{x} · {cases.set_index('case_id').loc[x, 'status_label']}")
-        d = svc.case_detail(run_id, cid)
+    if cases.empty:
+        st.info("Ningún caso coincide con los filtros.")
+    else:
+        view = cases[["case_id", "status_label", "supplier_id", "invoice_id", "po_id", "invoice_date", "currency",
+                      "total_minor", "amount_diff_minor", "reasons", "review_state", "decision"]].copy()
+        view["total_minor"] = view["total_minor"].map(money)
+        view["amount_diff_minor"] = view["amount_diff_minor"].map(money)
+        view["decision"] = view["decision"].fillna("")
+        view.columns = ["Caso", "Estado", "Proveedor", "Factura", "Orden", "Fecha", "Moneda", "Total", "Diferencia",
+                        "Motivos", "Revisión", "Decisión"]
+        st.dataframe(view, hide_index=True, width="stretch", height=280)
+        labels = dict(zip(cases["case_id"], cases["status_label"]))
+        cid = st.selectbox("Abrir caso", cases["case_id"], key="case_pick", format_func=lambda x: f"{x} · {labels[x]}")
+        try:
+            d = client.case(run_id, cid)
+        except ApiError as e:
+            fail(e)
         cc = d["caso"]
         st.markdown(f"### {cid} · {cc['status_label']}  \nFuente: `{cc['invoice_ref']}`")
         for m in d["motivos"]:
@@ -214,20 +246,30 @@ with tab_cases:
         if cc.get("decision"):
             st.success(f"Última decisión: {cc['decision']} · {cc['analyst']} · {cc['resolved_at']}")
         with st.form(f"res_{cid}"):
-            dec = st.selectbox("Decisión", [x.value for x in Decision])
-            who = st.text_input("Analista")
-            why = st.text_area("Justificación")
+            dec = st.selectbox("Decisión", [x.value for x in Decision], key="res_decision")
+            who = st.text_input("Analista", key="res_analyst")
+            why = st.text_area("Justificación", key="res_comment")
             if st.form_submit_button("Registrar decisión"):
                 try:
-                    svc.resolve(run_id, cid, Resolution(decision=dec, analyst=who, comment=why))
+                    client.resolve(run_id, cid, dec, who, why)
                     st.rerun()
-                except ValueError as e:
-                    st.error(f"Decisión no registrada: {e}")
+                except ApiError as e:
+                    st.error(f"Decisión no registrada ({e.status}): {e.detail}")
 
 with tab_exp:
     st.subheader("Exportar expediente")
     st.write(f"Incluye {len(cases)} casos de la vista filtrada con decisión humana, motivos, referencias a las filas "
              "fuente, hash SHA-256 de cada archivo de entrada y versión de reglas.")
     st.caption("Formatos: CSV, JSON y HTML imprimible (para PDF, imprimir el HTML).")
-    st.download_button("Descargar expediente (.zip)", svc.export(run_id, f), file_name=f"expediente_{run_id}.zip",
-                       mime="application/zip", type="primary")
+    export_key = (run_id, tuple(f.query_params()))
+    if st.button("Generar expediente"):
+        try:
+            st.session_state["export"] = (export_key, client.export(run_id, f))
+        except ApiError as e:
+            fail(e)
+    ready = st.session_state.get("export")
+    if ready and ready[0] == export_key:
+        st.download_button("Descargar expediente (.zip)", ready[1], file_name=f"expediente_{run_id}.zip",
+                           mime="application/zip", type="primary")
+    elif ready:
+        st.caption("Los filtros cambiaron: vuelva a generar el expediente.")
