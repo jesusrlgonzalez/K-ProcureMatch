@@ -149,6 +149,9 @@ def build(out: str | Path, *, seed: int = 1905, clean_mxn: int = 520, clean_usd:
             unit = p["unit_price_minor"]
             if scenario == "PRICE_WITHIN_TOLERANCE":
                 reprice(i, unit + rules_tolerance(unit) // 2)
+                over = int(i["total_minor"]) - (q * unit + _tax(q * unit, p["tax_rate_bp"]))
+                if over > LINE_CAP_MINOR[p["currency"]]:   # precio dentro de tolerancia, total sobre el tope
+                    truth[-1].update(scenario="PRICE_WITHIN_TOLERANCE_ABOVE_CAP", expected_status="EXCEPTION")
             elif scenario == "PRICE_OUT_OF_TOLERANCE":
                 bump = max(unit * 5 // 100, 500)
                 reprice(i, unit + bump)
@@ -201,8 +204,11 @@ def build(out: str | Path, *, seed: int = 1905, clean_mxn: int = 520, clean_usd:
 
 
 def rules_tolerance(unit: int) -> int:
-    """Tolerancia de precio de las reglas R1 (0.5 % o 100), replicada para fabricar casos límite."""
-    return max(100, unit * 50 // 10_000)
+    """Tolerancia de precio de las reglas R1.1.0 (0.5 % o 5), replicada para fabricar casos límite."""
+    return max(5, unit * 50 // 10_000)
+
+
+LINE_CAP_MINOR = {"MXN": 50_000, "USD": 2_500}   # tope por línea de R1.1.0, replicado solo para etiquetar
 
 
 if __name__ == "__main__":

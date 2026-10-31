@@ -35,6 +35,7 @@ REASONS: dict[str, Status] = {
     "INVOICE_BEFORE_PO": Status.EXCEPTION, "PRICE_OUT_OF_TOLERANCE": Status.EXCEPTION,
     "QTY_EXCEEDS_RECEIVED": Status.EXCEPTION, "QTY_EXCEEDS_ORDERED": Status.EXCEPTION,
     "TAX_MISMATCH": Status.EXCEPTION, "TOTAL_ARITHMETIC_MISMATCH": Status.EXCEPTION,
+    "AMOUNT_DIFF_ABOVE_CAP": Status.EXCEPTION,
 }
 NOTES = {"PRICE_WITHIN_TOLERANCE", "PARTIAL_RECEIPTS", "RETURN_APPLIED", "PARTIAL_BILLING"}
 PRECEDENCE = [Status.BLOCKED, Status.REVIEW, Status.UNMATCHED, Status.EXCEPTION, Status.MATCH]
@@ -62,6 +63,7 @@ REASON_TEXT = {
     "QTY_EXCEEDS_ORDERED": "Cantidad facturada supera lo ordenado pendiente",
     "TAX_MISMATCH": "Impuesto distinto al calculado con la tasa de la orden",
     "TOTAL_ARITHMETIC_MISMATCH": "Total distinto de subtotal + impuesto",
+    "AMOUNT_DIFF_ABOVE_CAP": "Diferencia en el total de la línea (impuestos incluidos) superior al tope de su moneda",
     "PRICE_WITHIN_TOLERANCE": "Diferencia de precio dentro de tolerancia",
     "PARTIAL_RECEIPTS": "Cantidad cubierta por varias recepciones",
     "RETURN_APPLIED": "Se descontaron devoluciones de la recepción",
@@ -116,7 +118,8 @@ class RunResult:
     def manifest(self) -> dict:
         return {"run_id": self.run_id, "as_of": self.as_of.isoformat(), "engine_version": __version__,
                 "rules": {"version": self.rules.version, "sha256": self.rules.sha256, "file": self.rules.path,
-                          "approval_status": self.rules.approval_status, "approved_by": self.rules.approved_by},
+                          "approval_status": self.rules.approval_status, "approved_by": self.rules.approved_by,
+                          "approved_on": self.rules.approved_on},
                 "sources": self.ingested.sources(),
                 "authority": {"payments_executed": False, "erp_postings": False, "purchase_orders_created": False}}
 
@@ -153,6 +156,7 @@ TABLE_DDL = {
     "issues": {"file": "VARCHAR", "row_no": "BIGINT", "field": "VARCHAR", "code": "VARCHAR", "value": "VARCHAR"},
     "suppliers": {"supplier_id": "VARCHAR"},
     "admitted": {"code": "VARCHAR"},
+    "line_cap": {"currency": "VARCHAR", "cap_minor": "BIGINT"},
     "reason_map": {"code": "VARCHAR", "status": "VARCHAR", "rank": "INTEGER"},
     "status_labels": {"status": "VARCHAR", "label": "VARCHAR"},
 }
@@ -176,6 +180,7 @@ def _frames(ing: Ingested, rules: RuleSet) -> dict[str, pd.DataFrame]:
         "issues": ing.issues,
         "suppliers": models("suppliers") if "suppliers" in t else pd.DataFrame(),
         "admitted": pd.DataFrame({"code": list(rules.currencies)}),
+        "line_cap": pd.DataFrame(list(rules.line_amount_cap_minor), columns=["currency", "cap_minor"]),
         "reason_map": pd.DataFrame([{"code": c, "status": s.value, "rank": rank[s]} for c, s in REASONS.items()]),
         "status_labels": pd.DataFrame([{"status": s.value, "label": lbl} for s, lbl in STATUS_LABEL.items()]),
     }

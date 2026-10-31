@@ -88,7 +88,7 @@ code{{font-size:10px}}@media print{{body{{margin:0}}}}</style></head><body>
 <h1>Expediente de conciliación 3-way</h1>
 <p><b>Corrida:</b> {e(manifest['run_id'])} · <b>Fecha de corte:</b> {e(manifest['as_of'])} ·
 <b>Motor:</b> {e(manifest['engine_version'])} · <b>Reglas:</b> {e(rules['version'])} (<code>{rules['sha256']}</code>,
-aprobación: {e(str(rules['approval_status']))})</p>
+aprobación: {e(' · '.join(str(rules[k]) for k in ('approval_status', 'approved_by', 'approved_on') if rules.get(k)))})</p>
 <p><b>Filtros aplicados:</b> {e(json.dumps(filters or {}, ensure_ascii=False))}</p>
 <p><b>Alcance de autoridad:</b> este expediente es soporte para revisión. No ejecuta pagos, asientos contables
 ni órdenes en ERP.</p>

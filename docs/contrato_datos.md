@@ -44,4 +44,4 @@ Toda fila se valida. Una fila inválida **no se elimina**: queda en `incidencias
 `supplier_id`, `legal_name`, `alias`. Si se proporciona, una factura de un proveedor que no esté en el maestro se bloquea con `UNKNOWN_SUPPLIER`.
 
 ## Datos de demostración
-`data/sample/` contiene un conjunto **sintético** y determinista, generado con `python run.py fixture`: 749 líneas de factura en MXN y USD con 27 escenarios. `expected_labels.csv` guarda el estado correcto de cada línea. El motor nunca lee ese archivo: solo se usa para medir la exactitud.
+`data/sample/` contiene un conjunto **sintético** y determinista, generado con `python run.py fixture`: 749 líneas de factura en MXN y USD con 28 escenarios. `expected_labels.csv` guarda el estado correcto de cada línea. El motor nunca lee ese archivo: solo se usa para medir la exactitud.

@@ -111,6 +111,6 @@ def test_client_pagination_and_filters_match_summary(client):
         assert s["lineas"] == len(cases) == sum(s["por_estado"].values())
     fac = client.facets(rid)
     assert fac["monedas"][:3] == ["EUR", "MXN", "USD"] and fac["facturas_sin_fecha_valida"] == 4
-    assert client.manifest(rid)["rules"]["version"] == client.rules()["version"] == "R1.0.0"
+    assert client.manifest(rid)["rules"]["version"] == client.rules()["version"] == "R1.1.0"
     z = zipfile.ZipFile(io.BytesIO(client.export(rid, Filters(currencies=["USD"]))))
     assert any(n.endswith("manifest.json") for n in z.namelist())

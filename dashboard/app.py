@@ -79,8 +79,10 @@ except ApiError as e:
 # ---------------------------------------------------------------- fuente y corrida
 st.sidebar.title("K-ProcureMatch")
 tol = rules["tolerancias"]
+cap_txt = " · ".join(f"{v / 100:,.2f} {k}" for k, v in (tol.get("tope_linea_minor") or {}).items()) or "sin tope"
 st.sidebar.caption(f"Reglas **{rules['version']}** · aprobación: `{rules['aprobacion']['estado']}`  \n"
-                   f"Tolerancia precio: {tol['precio_bp'] / 100:.2f} % o {tol['precio_abs_minor'] / 100:.2f}  \n"
+                   f"Tolerancia precio: {tol['precio_bp'] / 100:.2f} % o {tol['precio_abs_minor'] / 100:.2f} por unidad  \n"
+                   f"Tope por línea: {cap_txt}  \n"
                    f"API: `{API_URL}`")
 mode = st.sidebar.radio("Fuente de datos", ["Datos de demostración", "Subir mis archivos"], key="mode")
 

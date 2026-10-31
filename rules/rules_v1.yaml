@@ -1,12 +1,16 @@
 # Reglas de conciliación 3-way (orden de compra · recepción · factura).
 # Cualquier cambio de tolerancia o de regla exige nueva versión: el expediente registra
 # la versión y el SHA-256 de este archivo, de modo que un resultado siempre es rastreable.
-version: R1.0.0
-description: Reglas deterministas base; sin modelos estadísticos.
+version: R1.1.0
+description: Reglas deterministas; sin modelos estadísticos.
+changes: >-
+  R1.1.0 frente a R1.0.0: el mínimo de la tolerancia de precio baja de 1.00 a 0.05 por unidad y se agrega
+  un tope de diferencia por línea (500 MXN / 25 USD). Sustento: análisis de sensibilidad del motor sobre
+  datos sintéticos; el porcentaje y el tope se recalibran con datos reales en el piloto.
 approval:
-  status: pending        # pending | approved — la aprobación la registra el responsable de cuentas por pagar
-  approved_by: null
-  approved_on: null
+  status: approved       # pending | approved — la aprobación la registra el responsable de cuentas por pagar
+  approved_by: jesusrlgonzalez
+  approved_on: "2026-10-31"
 
 currencies: [MXN, USD]   # ISO 4217 admitidas; otra moneda se bloquea en validación
 
@@ -19,9 +23,13 @@ identification:
 tolerances:
   qty_units: 0                 # unidades facturadas por encima de lo recibido y no facturado
   unit_price_bp: 50            # 0.50 % del precio de la orden …
-  unit_price_abs_minor: 100    # … o 1.00 en moneda; se usa el mayor de los dos
+  unit_price_abs_minor: 5      # … o 0.05 en moneda por unidad; se usa el mayor de los dos
   tax_abs_minor: 1             # redondeo
   total_abs_minor: 1           # redondeo
+  # Tope por línea: diferencia máxima en el total de la línea (impuestos incluidos) para conciliar sin
+  # revisión; por encima, la línea pasa al analista aunque su precio esté dentro de tolerancia.
+  # Una moneda sin tope listado no tiene tope.
+  line_amount_cap_minor: {MXN: 50000, USD: 2500}
 
 dates:
   future_days_allowed: 0       # una factura posterior a la fecha de corte se bloquea

@@ -60,7 +60,7 @@ def test_rules_version_and_hash_change_the_run_id(tmp_path, sample_dir):
     from procurematch.engine import run
     rules = (load_rules().path, (__import__("conftest").ROOT / "rules" / "rules_v1.yaml").read_text(encoding="utf-8"))
     alt = tmp_path / "rules_alt.yaml"
-    alt.write_text(rules[1].replace("unit_price_abs_minor: 100", "unit_price_abs_minor: 200"), encoding="utf-8")
+    alt.write_text(rules[1].replace("unit_price_abs_minor: 5 ", "unit_price_abs_minor: 200 "), encoding="utf-8")
     a = run(sample_dir, as_of=__import__("datetime").date(2026, 3, 31))
     b = run(sample_dir, as_of=__import__("datetime").date(2026, 3, 31), rules_path=alt)
     assert a.run_id != b.run_id and a.rules.sha256 != b.rules.sha256
@@ -68,6 +68,31 @@ def test_rules_version_and_hash_change_the_run_id(tmp_path, sample_dir):
     bad.write_text(rules[1].replace("qty_units: 0", "qty_units: -1"), encoding="utf-8")
     with pytest.raises(ValueError):
         load_rules(bad)
+
+
+def test_line_cap_is_optional_validated_and_exposed(tmp_path, sample_dir, sample_run, client):
+    from datetime import date
+
+    from procurematch.engine import run
+    text = (__import__("conftest").ROOT / "rules" / "rules_v1.yaml").read_text(encoding="utf-8")
+    no_cap = tmp_path / "rules_sin_tope.yaml"
+    no_cap.write_text("".join(ln for ln in text.splitlines(keepends=True)
+                              if not ln.startswith("  line_amount_cap_minor:")), encoding="utf-8")
+    r = load_rules(no_cap)
+    assert r.line_amount_cap_minor == () and r.line_cap("USD") is None
+    # sin tope, el mínimo de 0.05 deja el conjunto oficial como con R1.0.0; el tope solo detiene la fila 646
+    free = run(sample_dir, as_of=date(2026, 3, 31), rules_path=no_cap).cases.set_index("row_no")["status"]
+    capped = sample_run.cases.set_index("row_no")["status"]
+    assert (free == "MATCH").sum() == 660 and list(free.index[free != capped]) == [646]
+    assert sample_run.cases.set_index("row_no").loc[646, "reasons"] == "AMOUNT_DIFF_ABOVE_CAP"
+    for bad_cap in ("{MXN: 50000, EUR: 2500}", "{MXN: -1, USD: 2500}", "{MXN: 50000, USD: 25.5}"):
+        bad = tmp_path / "rules_tope_malo.yaml"
+        bad.write_text(text.replace("{MXN: 50000, USD: 2500}", bad_cap), encoding="utf-8")
+        with pytest.raises(ValueError):
+            load_rules(bad)
+    api = client.get("/rules").json()
+    assert api["tolerancias"]["tope_linea_minor"] == {"MXN": 50000, "USD": 2500}
+    assert api["aprobacion"] == {"estado": "approved", "aprobado_por": "jesusrlgonzalez", "aprobado_el": "2026-10-31"}
 
 
 def test_metrics_vs_labels_and_baseline(sample_run, sample_dir):

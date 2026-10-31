@@ -71,7 +71,7 @@ jobs:
           at = AppTest.from_file("dashboard/app.py", default_timeout=120).run()
           assert not at.exception and not at.error, [e.value for e in at.exception] + [e.value for e in at.error]
           m = {x.label: x.value for x in at.metric}
-          assert m["Líneas"] == "749" and m["Conciliadas"] == "660", m
+          assert m["Líneas"] == "749" and m["Conciliadas"] == "659", m
           print("El dashboard en contenedor muestra", m["Líneas"], "líneas obtenidas de la API en contenedor")
           PY
       - if: failure()

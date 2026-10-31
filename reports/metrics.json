@@ -1,6 +1,6 @@
 {
-  "run_id": "82937891aca4f402",
-  "rules_version": "R1.0.0",
+  "run_id": "7fc68a40e58ecb43",
+  "rules_version": "R1.1.0",
   "as_of": "2026-03-31",
   "datos": "sintéticos (fixture etiquetado)",
   "motor_actual": {
@@ -13,12 +13,12 @@
       "MATCH": {
         "precision": 1.0,
         "recall": 1.0,
-        "support": 660
+        "support": 659
       },
       "EXCEPTION": {
         "precision": 1.0,
         "recall": 1.0,
-        "support": 36
+        "support": 37
       },
       "REVIEW": {
         "precision": 1.0,
@@ -46,7 +46,7 @@
       },
       "EXCEPTION": {
         "BLOCKED": 0,
-        "EXCEPTION": 36,
+        "EXCEPTION": 37,
         "MATCH": 0,
         "REVIEW": 0,
         "UNMATCHED": 0
@@ -54,7 +54,7 @@
       "MATCH": {
         "BLOCKED": 0,
         "EXCEPTION": 0,
-        "MATCH": 660,
+        "MATCH": 659,
         "REVIEW": 0,
         "UNMATCHED": 0
       },
@@ -89,12 +89,12 @@
         "casos_detectados_exactos": 7
       }
     ],
-    "esfuerzo_revision": 0.1188
+    "esfuerzo_revision": 0.1202
   },
   "motor_v0": {
     "falsas_coincidencias": 4,
-    "coincidencias_no_detectadas": 132,
-    "exactitud_binaria_match": 0.8184,
+    "coincidencias_no_detectadas": 131,
+    "exactitud_binaria_match": 0.8198,
     "esfuerzo_revision": 0.2897,
     "limitaciones": "solo MXN, IVA fijo 16 %, sin tolerancias, sin devoluciones ni facturación parcial"
   },

@@ -112,11 +112,13 @@ class Service:
     def rules(self) -> dict:
         r = load_rules(self.rules_path)
         return {"version": r.version, "sha256": r.sha256, "archivo": r.path,
-                "aprobacion": {"estado": r.approval_status, "aprobado_por": r.approved_by},
+                "aprobacion": {"estado": r.approval_status, "aprobado_por": r.approved_by,
+                               "aprobado_el": r.approved_on},
                 "monedas": list(r.currencies),
                 "tolerancias": {"cantidad_unidades": r.qty_units, "precio_bp": r.unit_price_bp,
                                 "precio_abs_minor": r.unit_price_abs_minor, "impuesto_abs_minor": r.tax_abs_minor,
-                                "total_abs_minor": r.total_abs_minor},
+                                "total_abs_minor": r.total_abs_minor,
+                                "tope_linea_minor": dict(r.line_amount_cap_minor)},
                 "dias_futuros_permitidos": r.future_days_allowed}
 
     # ------------------------------------------------------------ consultas

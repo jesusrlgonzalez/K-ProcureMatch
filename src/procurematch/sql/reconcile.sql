@@ -3,7 +3,7 @@
 -- del motivo de mayor precedencia (tabla reason_map); sin motivos, MATCH.
 -- Parámetros: $as_of, $future_limit, $has_suppliers, $tol_qty, $tol_price_bp, $tol_price_abs, $tol_tax, $tol_total
 -- Tablas de entrada (cargadas y validadas antes con Pydantic): inv_valid, inv_raw, inv_invalid, po_valid,
--- po_invalid, gr_valid, issues, suppliers, admitted, reason_map.
+-- po_invalid, gr_valid, issues, suppliers, admitted, line_cap, reason_map.
 
 WITH
 -- 1. Unicidad de factura: (proveedor, folio, línea) sin distinguir mayúsculas
@@ -128,7 +128,15 @@ r_qty AS (
     UNION ALL SELECT row_no, 'TAX_MISMATCH'              FROM money2 WHERE abs(tax_diff_minor) > $tol_tax
     UNION ALL SELECT row_no, 'TOTAL_ARITHMETIC_MISMATCH' FROM money2 WHERE abs(total_arith_diff_minor) > $tol_total
 ),
--- 9. Notas informativas (no cambian el estado)
+-- 9. Tope por línea: una línea que de otro modo se conciliaría no acepta en su total (impuestos incluidos)
+--    más diferencia que el tope de su moneda; por encima pasa al analista
+r_cap AS (
+    SELECT m.row_no, 'AMOUNT_DIFF_ABOVE_CAP' AS code
+    FROM money2 m JOIN line_cap c ON c.currency = m.currency
+    WHERE abs(m.total_minor - m.amount_expected_minor) > c.cap_minor
+      AND m.row_no NOT IN (SELECT row_no FROM r_doc UNION ALL SELECT row_no FROM r_qty)
+),
+-- 10. Notas informativas (no cambian el estado)
 notes AS (
               SELECT row_no, 'PARTIAL_RECEIPTS' AS code FROM base WHERE po_row_no IS NOT NULL AND n_receipts > 1
     UNION ALL SELECT row_no, 'RETURN_APPLIED'         FROM base WHERE po_row_no IS NOT NULL AND n_returns > 0
@@ -136,7 +144,7 @@ notes AS (
     UNION ALL SELECT row_no, 'PRICE_WITHIN_TOLERANCE' FROM money2
               WHERE price_diff_minor <> 0 AND abs(price_diff_minor) <= price_tolerance_minor
 ),
-reasons AS (SELECT * FROM r_doc UNION ALL SELECT * FROM r_qty),
+reasons AS (SELECT * FROM r_doc UNION ALL SELECT * FROM r_qty UNION ALL SELECT * FROM r_cap),
 verdict AS (
     SELECT r.row_no,
            arg_min(m.status, m.rank)                               AS status,
@@ -145,7 +153,7 @@ verdict AS (
     GROUP BY r.row_no
 ),
 note_txt AS (SELECT row_no, string_agg(DISTINCT code, ';' ORDER BY code) AS notes FROM notes GROUP BY row_no),
--- 10. Filas válidas: estado por precedencia
+-- 11. Filas válidas: estado por precedencia
 valid_cases AS (
     SELECT b.row_no, b.invoice_id, b.invoice_line, b.supplier_id, b.po_id, b.po_line, b.sku,
            strftime(b.invoice_date, '%Y-%m-%d') AS invoice_date, b.currency, b.document_type,
@@ -164,7 +172,7 @@ valid_cases AS (
     LEFT JOIN note_txt n USING (row_no)
     LEFT JOIN money2 m USING (row_no)
 ),
--- 11. Filas inválidas: se conservan con su texto original y los errores de validación como motivo
+-- 12. Filas inválidas: se conservan con su texto original y los errores de validación como motivo
 invalid_cases AS (
     SELECT r.row_no, r.invoice_id, r.invoice_line, r.supplier_id, r.po_id, r.po_line, r.sku, r.invoice_date,
            r.currency, r.document_type,

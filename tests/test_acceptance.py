@@ -42,20 +42,59 @@ def test_T_I19_01_partial_receipts_and_billing_still_match(make_case):
 
 # ---------------------------------------------------------------- T-I19-02 · AC-I19-02 (diferencia monetaria)
 def test_T_I19_02_price_out_of_tolerance_is_EXCEPTION_with_auditable_amounts(make_case):
-    res = make_case(invs=[invoice(unit_price_minor=10500)])   # +5 %; tolerancia max(100, 0.5 %·10000=50) = 100
+    res = make_case(invs=[invoice(unit_price_minor=10500)])   # +5 %; tolerancia max(5, 0.5 %·10000=50) = 50
     c = case(res)
     assert c["status"] == "EXCEPTION" and c["reasons"] == "PRICE_OUT_OF_TOLERANCE"
-    assert c["price_diff_minor"] == 500 and c["price_tolerance_minor"] == 100
+    assert c["price_diff_minor"] == 500 and c["price_tolerance_minor"] == 50
     assert c["amount_expected_minor"] == 116000 and c["total_minor"] == 121800 and c["amount_diff_minor"] == 5800
-    assert res.manifest()["rules"]["version"] == "R1.0.0"
+    rules = res.manifest()["rules"]
+    assert rules["version"] == "R1.1.0" and rules["approval_status"] == "approved" and rules["approved_on"]
 
 
-@pytest.mark.parametrize("delta,status", [(100, "MATCH"), (101, "EXCEPTION"), (-100, "MATCH"), (-101, "EXCEPTION")])
+@pytest.mark.parametrize("delta,status", [(50, "MATCH"), (51, "EXCEPTION"), (-50, "MATCH"), (-51, "EXCEPTION")])
 def test_T_I19_02_tolerance_boundary(make_case, delta, status):
-    c = case(make_case(invs=[invoice(unit_price_minor=10000 + delta)]))
+    c = case(make_case(invs=[invoice(unit_price_minor=10000 + delta)]))   # 0.5 % de 100.00 = 0.50 por unidad
     assert c["status"] == status
     if status == "MATCH":
         assert c["notes"] == "PRICE_WITHIN_TOLERANCE"
+
+
+@pytest.mark.parametrize("delta,status", [(5, "MATCH"), (6, "EXCEPTION"), (-5, "MATCH"), (-6, "EXCEPTION")])
+def test_T_I19_02_minimum_tolerance_boundary_on_cheap_items(make_case, delta, status):
+    # Precio 5.00: el 0.5 % daría 0.02; rige el mínimo de 0.05 por unidad (antes 1.00 = 20 % del precio)
+    c = case(make_case(pos=[{**PO, "unit_price_minor": "500"}], invs=[invoice(unit_price_minor=500 + delta)]))
+    assert c["price_tolerance_minor"] == 5 and c["status"] == status
+
+
+USD_PO = {**PO, "currency": "USD", "tax_rate_bp": "0", "qty_ordered": "1", "unit_price_minor": "1000000"}
+ONE_RECEIPT = {**GR, "qty_received": "1"}
+
+
+def usd_invoice(unit: int) -> dict:
+    return invoice(qty_billed=1, unit_price_minor=unit, tax_minor=0, total_minor=unit, currency="USD")
+
+
+@pytest.mark.parametrize("delta,status", [(2500, "MATCH"), (2501, "EXCEPTION"), (-2500, "MATCH"), (-2501, "EXCEPTION")])
+def test_T_I19_02_line_cap_boundary(make_case, delta, status):
+    # Precio dentro de tolerancia (0.5 % de 10,000.00 = 50.00) pero la línea no puede aceptar más de 25.00 USD
+    c = case(make_case(pos=[USD_PO], grs=[ONE_RECEIPT], invs=[usd_invoice(1_000_000 + delta)]))
+    assert c["status"] == status and c["amount_diff_minor"] == delta
+    assert c["reasons"] == ("" if status == "MATCH" else "AMOUNT_DIFF_ABOVE_CAP")
+    assert c["notes"] == "PRICE_WITHIN_TOLERANCE"
+
+
+@pytest.mark.parametrize("delta,diff,status", [(43_103, 49_999, "MATCH"), (43_104, 50_001, "EXCEPTION")])
+def test_T_I19_02_line_cap_includes_tax(make_case, delta, diff, status):
+    # Subtotal +431.04 MXN, bajo el tope; con IVA la diferencia del total es 500.01 y lo supera
+    po = {**PO, "qty_ordered": "1", "unit_price_minor": "10000000"}
+    c = case(make_case(pos=[po], grs=[ONE_RECEIPT], invs=[invoice(qty_billed=1, unit_price_minor=10_000_000 + delta)]))
+    assert c["amount_diff_minor"] == diff and c["status"] == status
+
+
+def test_T_I19_02_line_cap_only_on_lines_that_would_match(make_case):
+    # Precio fuera de tolerancia con diferencia muy superior al tope: un solo motivo, el de precio
+    c = case(make_case(pos=[USD_PO], grs=[ONE_RECEIPT], invs=[usd_invoice(1_200_000)]))
+    assert c["status"] == "EXCEPTION" and c["reasons"] == "PRICE_OUT_OF_TOLERANCE"
 
 
 @pytest.mark.parametrize("kw,grs,reason", [
@@ -212,7 +251,7 @@ def test_T_I19_05_export_carries_decision_reasons_version_and_refs(sample_dir, s
     assert hit["decision"] == "REMITIR" and hit["analyst"] == "ana.cxp" and hit["review_state"] == "RESUELTO"
     assert rows["reasons"].notna().all() and rows["invoice_ref"].str.contains("fila").all()
     assert rows["po_ref"].notna().all() and rows["receipt_refs"].notna().all()
-    assert man["rules"]["version"] == "R1.0.0" and len(man["rules"]["sha256"]) == 64
+    assert man["rules"]["version"] == "R1.1.0" and len(man["rules"]["sha256"]) == 64
     import hashlib
     for f, meta in man["sources"].items():
         assert meta["sha256"] == hashlib.sha256((sample_dir / f).read_bytes()).hexdigest()

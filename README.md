@@ -10,7 +10,7 @@ En cuentas por pagar, una factura solo debería avanzar si coincide con lo que s
 ## Qué hace
 1. **Importa** las tres fuentes (o usa el conjunto de demostración) y muestra su cobertura, sus periodos y los registros inválidos.
 2. **Valida** identificadores, tipos, monedas, fechas y duplicados. Las filas inválidas se señalan por archivo y fila, nunca se borran en silencio.
-3. **Concilia** con reglas deterministas versionadas y tolerancias configurables. Contempla recepciones parciales, devoluciones, facturación parcial y varias monedas.
+3. **Concilia** con reglas deterministas versionadas: tolerancia de precio por unidad y un tope de diferencia por línea que envía al analista las diferencias grandes aunque el precio esté dentro de tolerancia. Contempla recepciones parciales, devoluciones, facturación parcial y varias monedas.
 4. **Clasifica** cada línea en un embudo de categorías disjuntas: recibidos → aptos → vinculados → conciliados, con discrepantes, en revisión, sin vínculo y bloqueados aparte.
 5. **Explica** cada caso: los tres documentos vinculados lado a lado, las diferencias de cantidad, precio, impuesto y total, el motivo de la clasificación y la fila exacta de cada fuente.
 6. **Registra** la decisión del analista y **exporta** el expediente (CSV, JSON y HTML imprimible) con el hash de cada archivo de entrada y la versión de reglas.
@@ -20,17 +20,19 @@ En cuentas por pagar, una factura solo debería avanzar si coincide con lo que s
 > **Frontera:** es soporte a la decisión del analista. No aprueba pagos, no registra asientos y no crea órdenes en ningún ERP.
 
 ## Resultados verificados
-Medidos sobre el conjunto sintético de demostración (749 líneas, MXN y USD, 27 escenarios etiquetados) con `python run.py evaluate`. CI vuelve a calcularlos en cada cambio.
+Medidos sobre el conjunto sintético de demostración (749 líneas, MXN y USD, 28 escenarios etiquetados) con `python run.py evaluate`. CI vuelve a calcularlos en cada cambio.
 
-| Indicador | K-ProcureMatch (reglas R1.0.0) | Motor de reglas anterior (v0) | Cotejo manual |
+| Indicador | K-ProcureMatch (reglas R1.1.0) | Motor de reglas anterior (v0) | Cotejo manual |
 |---|---|---|---|
 | Falsas coincidencias (factura aprobada que no debía) | **0** | 4 | — |
-| Exactitud de clasificación (5 estados) | **100 %** | 81.8 % (solo MATCH / no MATCH) | — |
-| Coincidencias correctas enviadas a revisión innecesaria | **0** | 132 | — |
-| Esfuerzo de revisión (líneas que exigen analista) | **11.9 %** | 29.0 % | 100 % |
+| Exactitud de clasificación (5 estados) | **100 %** | 82.0 % (solo MATCH / no MATCH) | — |
+| Coincidencias correctas enviadas a revisión innecesaria | **0** | 131 | — |
+| Esfuerzo de revisión (líneas que exigen analista) | **12.0 %** | 29.0 % | 100 % |
 | Diferencias monetarias inyectadas detectadas al centavo | **24 / 24** (MXN y USD por separado) | — | — |
 
 El motor v0 aprobaba facturas con fecha futura o ligadas a órdenes inválidas, y enviaba a revisión todas las líneas en USD, las diferencias dentro de tolerancia y la facturación parcial. **Estos resultados son de datos sintéticos** y no constituyen un ahorro medido en una operación real.
+
+**Tolerancias calibradas, no supuestas.** Las de R1.1.0 son 0.5 % del precio o 0.05 por unidad, y un tope de 500 MXN / 25 USD por línea, impuestos incluidos. Se eligieron con un análisis de sensibilidad del motor sobre datos sintéticos: el mínimo anterior de 1.00 dejaba pasar sobrecargos en artículos baratos, y el tope detiene las diferencias grandes que una tolerancia porcentual acepta en líneas de mucho volumen. El porcentaje y el tope se recalibran con los datos reales del piloto.
 
 **¿Por qué sin Machine Learning?** Las reglas deterministas ya logran cero falsas coincidencias en este conjunto y cada decisión es explicable. Un modelo solo se consideraría con datos reales y si redujera el esfuerzo de revisión sin aumentar las falsas coincidencias.
 
@@ -93,7 +95,7 @@ Los filtros (`supplier`, `currency`, `status`, `reason`, `review_state`, `date_f
 - El motor v0 original se conserva en `src/i19/` como línea base de comparación.
 
 ## Estado y siguiente paso
-Sistema funcional y verificado con datos sintéticos. Las tolerancias de `rules_v1.yaml` son una **propuesta pendiente de aprobación** por el responsable de cuentas por pagar. El expediente se exporta en CSV, JSON y HTML imprimible; el PDF nativo se incorporaría si se contrata ese formato.
+Sistema funcional y verificado con datos sintéticos. Las tolerancias R1.1.0 de `rules_v1.yaml` están **aprobadas** (2026-10-31) y el expediente registra quién las aprobó y cuándo. El expediente se exporta en CSV, JSON y HTML imprimible; el PDF nativo se incorporaría si se contrata ese formato.
 
 El siguiente paso es un **piloto con datos reales** de su área de compras, bajo acuerdo de uso y confidencialidad, para medir las falsas coincidencias y el esfuerzo de revisión frente a su proceso actual.
 

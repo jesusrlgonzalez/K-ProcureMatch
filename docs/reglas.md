@@ -1,4 +1,4 @@
-# Catálogo de reglas (R1.0.0)
+# Catálogo de reglas (R1.1.0)
 
 Cada línea de factura recibe **un único estado**. Si se activan varios motivos, gana el de mayor precedencia: `BLOCKED` > `REVIEW` > `UNMATCHED` > `EXCEPTION` > `MATCH`.
 
@@ -40,6 +40,7 @@ Las reglas están implementadas en SQL en [`src/procurematch/sql/reconcile.sql`]
 | `QTY_EXCEEDS_ORDERED` | `EXCEPTION` | Cantidad facturada supera lo ordenado pendiente |
 | `TAX_MISMATCH` | `EXCEPTION` | Impuesto distinto al calculado con la tasa de la orden |
 | `TOTAL_ARITHMETIC_MISMATCH` | `EXCEPTION` | Total distinto de subtotal + impuesto |
+| `AMOUNT_DIFF_ABOVE_CAP` | `EXCEPTION` | Diferencia en el total de la línea (impuestos incluidos) superior al tope de su moneda |
 | `<campo>:<código>` | `BLOCKED` | Error de formato en la fila: `MISSING_KEY`, `INVALID_ID_FORMAT`, `INVALID_NUMBER`, `NEGATIVE_NOT_ALLOWED`, `INVALID_DATE`, `INVALID_CURRENCY`, `INVALID_DOCUMENT_TYPE` |
 
 ## Notas informativas (no cambian el estado)
@@ -53,7 +54,8 @@ Las reglas están implementadas en SQL en [`src/procurematch/sql/reconcile.sql`]
 
 ## Cálculos
 
-- **Tolerancia de precio:** `max(unit_price_abs_minor, precio_OC × unit_price_bp / 10 000)`.
+- **Tolerancia de precio:** `max(unit_price_abs_minor, precio_OC × unit_price_bp / 10 000)`, truncada al centavo. En R1.1.0: 0.5 % del precio de la orden o 0.05 por unidad, el mayor.
+- **Tope por línea:** una línea que de otro modo se conciliaría pasa a `EXCEPTION` (`AMOUNT_DIFF_ABOVE_CAP`) si `|total facturado − importe respaldado|` supera el tope de su moneda (`line_amount_cap_minor`; en R1.1.0, 500.00 MXN y 25.00 USD). Igual al tope sigue conciliada. No se aplica a líneas que ya tienen otro motivo, y una moneda sin tope listado no tiene tope.
 - **Impuesto esperado:** `cantidad × precio_factura × tasa_OC`, redondeado al centavo (half-up).
 - **Cantidad facturable:** recibido neto (recepciones − devoluciones, con fecha ≤ corte) − lo ya facturado antes en esa línea de orden, en orden cronológico. Un duplicado no consume cantidad.
 - **Importe respaldado:** `min(cantidad facturada, facturable) × precio_OC`, más su impuesto.
