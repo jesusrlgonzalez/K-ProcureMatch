@@ -1,10 +1,28 @@
 [build-system]
 requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
+
 [project]
-name = "i19-procurement-dirty-data"
+name = "k-procurematch"
 version = "1.0.0"
-description = "Demostrador no productivo para conciliación 3-way y datos sucios sintéticos"
-requires-python = ">=3.10"
+description = "Conciliación determinista 3-way de órdenes de compra, recepciones y facturas"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.2,<3",
+    "duckdb>=1.1,<2",
+    "pydantic>=2.7,<3",
+    "pyyaml>=6,<7",
+]
+
+[project.optional-dependencies]
+api = ["fastapi>=0.115,<1", "uvicorn>=0.30,<1"]
+dashboard = ["streamlit>=1.50,<2", "plotly>=5.24,<7"]
+dev = ["pytest>=8,<10", "httpx>=0.27,<1"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+filterwarnings = ["ignore::DeprecationWarning:starlette.*", "ignore:Using `httpx`:DeprecationWarning"]

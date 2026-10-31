@@ -4,3 +4,6 @@ __pycache__/
 .venv/
 .env
 demo_output/
+data/*.duckdb
+data/*.duckdb.wal
+state/

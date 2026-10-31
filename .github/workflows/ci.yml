@@ -18,13 +18,42 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
       - run: python -m pip install -r requirements.txt
-      - name: Tests
+      - name: Pruebas (incluye criterios de aceptación T-I19-01 … 05)
         run: python run.py test
       - name: Demo de punta a punta
         run: python run.py demo
+      - name: Indicadores de validación
+        run: python run.py evaluate
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: demo-output-${{ matrix.os }}
-          path: demo_output/
+          name: evidencia-${{ matrix.os }}
+          path: |
+            demo_output/
+            reports/metrics.json
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Construir imagen
+        run: docker build -t k-procurematch:ci .
+      - name: Arranque de la API y consumo real de sus endpoints
+        run: |
+          docker run -d --name kpm -p 8000:8000 k-procurematch:ci
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8000/health && break; sleep 2; done
+          RID=$(curl -fsS -X POST http://127.0.0.1:8000/runs -H 'content-type: application/json' \
+                -d '{"as_of":"2026-03-31"}' | python3 -c "import json,sys;print(json.load(sys.stdin)['run_id'])")
+          curl -fsS "http://127.0.0.1:8000/runs/$RID/summary" | python3 -c \
+            "import json,sys;d=json.load(sys.stdin);assert sum(d['por_estado'].values())==d['lineas']==749,d;print(d['por_estado'])"
+          curl -fsS -o expediente.zip "http://127.0.0.1:8000/runs/$RID/export"
+          python3 -c "import zipfile;n=zipfile.ZipFile('expediente.zip').namelist();assert any(x.endswith('manifest.json') for x in n);print(n)"
+      - name: Arranque del dashboard
+        run: |
+          docker run -d --name dash -p 8501:8501 k-procurematch:ci \
+            streamlit run dashboard/app.py --server.address=0.0.0.0 --server.headless=true
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8501/_stcore/health && exit 0; sleep 2; done; exit 1
+      - if: failure()
+        run: docker logs kpm; docker logs dash || true
