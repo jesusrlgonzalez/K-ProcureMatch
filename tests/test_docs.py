@@ -1,0 +1,10 @@
+"""La documentación no puede quedar desalineada del motor."""
+from conftest import ROOT
+
+from procurematch.engine import NOTES, REASONS
+
+
+def test_every_reason_code_is_documented():
+    doc = (ROOT / "docs" / "reglas.md").read_text(encoding="utf-8")
+    missing = [c for c in [*REASONS, *NOTES] if f"`{c}`" not in doc]
+    assert not missing, f"códigos sin documentar en docs/reglas.md: {missing}"

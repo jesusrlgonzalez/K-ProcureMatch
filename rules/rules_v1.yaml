@@ -1,0 +1,31 @@
+# Reglas de conciliación 3-way (orden de compra · recepción · factura).
+# Cualquier cambio de tolerancia o de regla exige nueva versión: el expediente registra
+# la versión y el SHA-256 de este archivo, de modo que un resultado siempre es rastreable.
+version: R1.0.0
+description: Reglas deterministas base; sin modelos estadísticos.
+approval:
+  status: pending        # pending | approved — la aprobación la registra el responsable de cuentas por pagar
+  approved_by: null
+  approved_on: null
+
+currencies: [MXN, USD]   # ISO 4217 admitidas; otra moneda se bloquea en validación
+
+identification:
+  invoice_key: [supplier_id, invoice_id, invoice_line]   # unicidad de factura
+  link_key: [po_id, po_line]                              # vínculo principal
+  fallback_link_key: [po_id, sku]                         # si la factura no trae po_line
+
+# Todas las cantidades monetarias se expresan en unidades menores (centavos) como enteros.
+tolerances:
+  qty_units: 0                 # unidades facturadas por encima de lo recibido y no facturado
+  unit_price_bp: 50            # 0.50 % del precio de la orden …
+  unit_price_abs_minor: 100    # … o 1.00 en moneda; se usa el mayor de los dos
+  tax_abs_minor: 1             # redondeo
+  total_abs_minor: 1           # redondeo
+
+dates:
+  future_days_allowed: 0       # una factura posterior a la fecha de corte se bloquea
+  invoice_before_po: exception # factura anterior a su orden → discrepancia documental
+
+documents:
+  credit_note: review          # notas de crédito y devoluciones siempre van a revisión humana
