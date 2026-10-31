@@ -2,7 +2,7 @@
 
 Cada línea de factura recibe **un único estado**. Si se activan varios motivos, gana el de mayor precedencia: `BLOCKED` > `REVIEW` > `UNMATCHED` > `EXCEPTION` > `MATCH`.
 
-Las tolerancias viven en [`rules/rules_v1.yaml`](../rules/rules_v1.yaml). El expediente registra la versión y el SHA-256 de ese archivo. Cambiar una tolerancia exige publicar una nueva versión de reglas.
+Las reglas están implementadas en SQL en [`src/procurematch/sql/reconcile.sql`](../src/procurematch/sql/reconcile.sql): cada motivo es una consulta que emite `(fila, código)`. Las tolerancias viven en [`rules/rules_v1.yaml`](../rules/rules_v1.yaml). El expediente registra la versión y el SHA-256 de ese archivo. Cambiar una tolerancia exige publicar una nueva versión de reglas.
 
 ## Estados
 

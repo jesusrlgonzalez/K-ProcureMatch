@@ -62,8 +62,9 @@ Las pruebas están en `tests/test_acceptance.py` y corren en Linux y Windows en 
 | Capa | Tecnología | Por qué |
 |---|---|---|
 | Contratos de datos | Pydantic | Valida cada fila y produce errores con código, campo y fila |
-| Ingesta y cobertura | DuckDB (SQL) | Lee los CSV como texto sin perder filas; persiste corridas y decisiones |
-| Motor | Python + pandas | Reglas deterministas; importes en enteros (centavos), sin flotantes |
+| Ingesta y persistencia | DuckDB (SQL) | Lee los CSV como texto sin perder filas, calcula cobertura y periodos, guarda corridas y decisiones |
+| Motor | **SQL (DuckDB) + pandas** | Las reglas viven en [`reconcile.sql`](src/procurematch/sql/reconcile.sql): cada regla es una consulta, el vínculo 3-way son joins, la facturación acumulada usa funciones de ventana y el estado sale de una tabla de precedencia. Importes en enteros (centavos), sin flotantes |
+| Indicadores y filtros | pandas | Embudo, importes por moneda y filtros compartidos por dashboard y API |
 | Interfaz | Streamlit + Plotly | Filtros por proveedor, periodo, moneda, discrepancia y estado de revisión; embudo; comparador de documentos |
 | API | FastAPI | Consumo programático; CI la arranca en un contenedor y consume sus endpoints |
 | Entrega | Docker, GitHub Actions | Pruebas en Ubuntu y Windows; build de la imagen y arranque real de la API y del dashboard |
